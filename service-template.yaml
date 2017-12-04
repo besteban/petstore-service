@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: Template
+metadata:
+  annotations:
+    iconClass: icon-java
+  name: petstore
+objects:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: petstore
+    labels:
+      application: petstore
+  spec:
+    tags:
+    - name: latest
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: petstore
+    labels:
+      application: petstore
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: petstore:latest
+    source:
+      git:
+        ref: ${GIT_REF}
+        uri: ${GIT_URI}
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+        - name: MAVEN_MIRROR_URL
+          value: ${MAVEN_MIRROR_URL}
+        from:
+          kind: ImageStreamTag
+          name: redhat-openjdk18-openshift:1.0
+          namespace: ${IMAGE_STREAM_NAMESPACE}
+      type: Source
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    name: petstore
+    labels:
+      application: petstore
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: petstore
+    strategy:
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          application: petstore
+          deploymentconfig: petstore
+        name: petstore
+      spec:
+        containers:
+        - env:
+          - name: CATALOG_ENDPOINT
+            value: "http://catalog:8080"
+          image: petstore
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: petstore
+          ports:
+          - containerPort: 8778
+            name: jolokia
+            protocol: TCP
+          - containerPort: 8080
+            name: http
+            protocol: TCP
+          - containerPort: 8443
+            name: https
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 10
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 1Gi
+              cpu: 1
+            requests:
+              memory: 512Mi
+              cpu: 200m
+          terminationMessagePath: /dev/termination-log
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 75
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - petstore
+        from:
+          kind: ImageStreamTag
+          name: petstore:latest
+      type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: petstore
+      application: petstore
+    name: petstore
+  spec:
+    ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      deploymentconfig: petstore
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      application: petstore
+    name: petstore
+  spec:
+    to:
+      kind: Service
+      name: petstore
+      weight: 100
+parameters:
+- displayName: Application name
+  name: APPLICATION_NAME
+  required: true
+  value: petstore
+- description: Git source URI for application
+  displayName: Git source repository
+  name: GIT_URI
+  required: true
+  value: https://github.com/besteban/petstore-service.git
+- description: Git branch/tag reference
+  displayName: Git branch/tag reference
+  name: GIT_REF
+  value: master
+- description: Maven mirror url. If nexus is deployed locally, use nexus url (e.g. http://nexus.ci:8081/content/groups/public/)
+  displayName: Maven mirror url
+  name: MAVEN_MIRROR_URL
+- displayName: ImageStream Namespace
+  description: Namespace in which the ImageStreams for Red Hat OpenJDK image is installed. These ImageStreams are normally installed in the openshift namespace. You should only need to modify this if you've installed the ImageStreams in a different namespace/project.
+  name: IMAGE_STREAM_NAMESPACE
+  required: true
+  value: openshift
