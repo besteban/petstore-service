@@ -1,9 +1,8 @@
 pipeline:
   build:
     image: arm32v5/maven:3.5.2-jdk-8-slim
+    pull: true
     commands:
-      - go get
-      - mvn compile
-      - go build
-      - go test
+      - git log | head -n 20
+      - mvn clean install 
 
